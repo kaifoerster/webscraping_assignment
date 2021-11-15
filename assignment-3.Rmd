@@ -1,0 +1,205 @@
+---
+title: "Assignment 3 - Web data and technologies"
+author: "kaifoerster"
+date: "`r format(Sys.time(), '%B %d, %Y | %H:%M:%S | %Z')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: cosmo
+    toc: no
+---
+  
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+</style>
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA)
+```
+
+<!-- Do not forget to input your Github username in the YAML configuration up there --> 
+
+***
+
+```{r, include = T}
+library(rvest)
+library(tidyverse)
+```
+
+<br>
+
+***
+
+### Task 1 - Towers of the world [7 points in total]
+
+The article [List of tallest towers](https://en.wikipedia.org/wiki/List_of_tallest_towers) on the English Wikipedia provides various lists and tables of tall towers. Using the article version as it was published at 17:14, 26 September 2021 (accessible under the following permanent link: https://en.wikipedia.org/w/index.php?title=List_of_tallest_towers&oldid=1046628459), work on the following tasks.
+
+a) Scrape the table "Towers proposed or under construction" and parse the data into a data frame. Clean the variables for further analysis. Then, print the dataset. [5 points]
+
+```{r}
+url <- "https://en.wikipedia.org/w/index.php?title=List_of_tallest_towers&oldid=1046628459"
+url_p <- read_html(url)
+tables <- html_table(url_p, header = TRUE)
+
+proposed_towers <- tables[[7]]
+proposed_towers$Year = parse_integer(proposed_towers$Year, na = "?")
+proposed_towers$`Pinnacle height` = parse_number(proposed_towers$`Pinnacle height`)
+proposed_towers$Status = parse_factor(proposed_towers$Status)
+proposed_towers$Function = parse_factor(proposed_towers$Function)
+proposed_towers<-proposed_towers%>%select(-"Ref")
+proposed_towers
+```
+
+<br>
+
+b) How many of those buildings are planned for observation purposes? Use R to compute the answer. [1 point]
+
+```{r}
+invisible(as.numeric(proposed_towers$Function))
+observation_tower <- filter(proposed_towers, as.numeric(Function) == 1 | as.numeric(Function) == 3)
+cat("Number of building proposed or under constructions which are planned for observation purposes: ", nrow(observation_tower))
+```
+
+<br>
+
+c) What is the sum of the planned pinnacle height of all those towers? Again, use R to compute the answer.  [1 point]
+
+```{r}
+total_height <- sum(proposed_towers$`Pinnacle height`)
+cat("The sum of the pinnacle height of all planned buildings is", total_height, "meters.")
+```
+
+
+<br>
+
+***
+
+### Task 2 - Scraping newspaper headlines [14 points in total]
+
+Use Selectorgadget and R to scrape the article headlines from https://www.theguardian.com/international. 
+
+a) Provide the first 6 observations from the uncleaned vector of scraped headlines. [3 points]
+
+```{r}
+url_p <- read_html("https://www.theguardian.com/international")
+elements_set <- html_elements(url_p, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "simple-content-card__headline", " " ))] | //*[contains(concat( " ", @class, " " ), concat( " ", "fc-sublink__link", " " ))] | //*[contains(concat( " ", @class, " " ), concat( " ", "js-headline-text", " " ))]')
+headlines <- elements_set %>% html_text2()
+headlines[c(1:6)]
+```
+
+<br>
+
+b) Tidy the text data (e.g., remove irrelevant characters if there are any, and get rid of duplicates), compute the number of unique headings, and provide a random sample of 5 headings. [2 points]
+
+```{r}
+headlines <- unique(headlines)
+headlines <- headlines[!headlines %in% c("More from the series", "Share your experience of coronavirus", "Share a story with the Guardian", "Listen to previous episodes")]
+
+cat("The number of unique headings is : ", length(headlines), "\n")
+cat("Here is a random sample of 5 headings from the scraped headlines: \n")
+sample (headlines, size=5, replace =F)
+```
+
+<br>
+
+c) Identify the 5 most frequent words in all headlines, excluding English stopwords. (Hint: use a string processing function from the `stringr` package to split up the headings word by word, and use an empty space, " ", as splitting pattern.) [2 points]
+
+```{r}
+#Note: stopwords from https://countwordsfree.com/stopwords
+
+headlinestring <- str_flatten(headlines, " ")
+headlinestring <- str_replace_all(headlinestring, "[:punct:]", "")
+headlinestring <- str_replace_all(headlinestring, "[:space:]", " ")
+headlinestring <- tolower(headlinestring)
+wordlist = str_split(headlinestring, " ")
+
+stop_words <- read_csv("stop_words_english.txt", 
+    col_names = FALSE,
+    cols(
+  X1 = col_character()
+))
+
+top5words <- tibble(headlinestring)%>%
+  mutate(wordlist = str_split(headlinestring, " "))%>%
+  unnest(cols = c(wordlist))%>%
+  count(wordlist) %>% 
+  filter(!wordlist %in% stop_words$X1) %>%
+  filter(wordlist != "")%>%
+  arrange(desc(n))%>%
+  head(5)
+
+top5words
+```
+
+<br>
+
+d) Develop an XPath expression that locates the set of links pointing to the articles behind the headings from the previous tasks and apply it to extract those links, storing them in a vector. List the first 5 links. *Note: The number of links might not be identical to the number of headings you extracted above. You may ignore minor differences.* [3 points]
+
+```{r}
+url_set <- html_elements(url_p, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "simple-content-card__headline", " " ))]/@href | //*[contains(concat( " ", @class, " " ), concat( " ", "fc-sublink__link", " " ))]/@href | //*[contains(concat( " ", @class, " " ), concat( " ", "js-headline-text", " " ))]/@href')
+links <- url_set %>% html_text2()
+links <- unique(links)
+cat("Here are the first 5 unique links pointing to the article behind the headlines: \n")
+links[c(1:5)]
+
+```
+
+<br>
+
+e) Provide polite code that downloads the article HTMLs to a local folder. Provide proof that the download was performed successfully by listing the first 5 files in the folder and giving the total number of files contained by the folder. Make sure that the folder itself is not synced to GitHub using `.gitignore`. [4 points]
+
+```{r}
+#create directory to store data
+
+tempwd <- ("data")
+dir.create(tempwd)
+setwd(tempwd)
+
+folder <- "html_guardian_articles/"
+dir.create(folder)
+
+#create names of the html files to be downloaded
+names <- paste0(sub('.*\\/', '', links), ".html")
+
+#download only non-existent files, i.e. only update, don't replace
+for (i in 1:length(links)) {
+
+    if (!file.exists(paste0(folder, names[i]))) {  
+  # skip article when we run into an error   
+      tryCatch( 
+        download.file(links[i], destfile = paste0(folder, names[i])),
+        error = function(e) e
+      )
+  # being polite!  
+      Sys.sleep(runif(1, 0, 1)) 
+        
+    } }
+
+```
+```{r}
+#create a list of html files
+list_files <- list.files("data/html_guardian_articles/")
+
+#delete html files of arcticles that are not in the headlines anymore
+for (i in 1:length(list_files)){
+  if (!(list_files[i] %in% names)) {
+  #Delete file if it exists
+  print(list_files[i])  
+  file.remove(paste0("data/html_guardian_articles/", list_files[i]))
+}  
+}
+
+#update list of html files
+list_files <- list.files("data/html_guardian_articles/")
+cat("The first five files in the folder are: \n")
+list_files%>%head(5)
+cat("The total number of files in the folder are: ", length(list_files))
+```
